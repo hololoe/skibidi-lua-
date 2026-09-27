@@ -1,0 +1,6 @@
+local args = {
+	"cmd",
+	"-gh 5268602207 5268602207 5268602207 5268602207 5268602207 5268602207 5268602207 5268602207 5268602207 5268602207 "
+}
+game:GetService("ReplicatedStorage"):WaitForChild("01_server"):FireServer(unpack(args))
+wait(1)
