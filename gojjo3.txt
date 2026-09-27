@@ -1,0 +1,777 @@
+--════════════════════════════════════════════════════════════════
+--  VOIDLORD SWORD • v15.4 FULL • HIỆU ỨNG KÍCH HOẠT KHI BẤM [1]
+--  ► Load: 10 kiếm thật (50 stud) → vòng cắm đất, ló đúng Reveal stud
+--  ► Bấm [1]: BÙNG NỞ KÍCH HOẠT —
+--    • vòng năng lượng + tia lửa bùng tại chỗ mỗi kiếm đang cắm
+--    • CỘT SÁNG TÍM phủi từ đất lên trời
+--    • kiếm bay lên đầu, TỚI ĐÍCH LÓE SÁNG từng kiếm (flash burst)
+--    • toàn bộ kiếm biến TÍM NEON + hào quang + tia năng lượng
+--    • tp liên tục quanh 3 vòng tròn 20→32 stud lấp đầy
+--  ► Chờ 3s → nâng → ĐÂM CHẬM lệch pha → nổ → về chân TRẢ MÀU GỐC
+--  ► getgenv().VoidLordUnload() = tắt
+--════════════════════════════════════════════════════════════════
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local UIS     = game:GetService("UserInputService")
+local RS      = game:GetService("RunService")
+local SG      = game:GetService("StarterGui")
+local TS      = game:GetService("TweenService")
+local Debris  = game:GetService("Debris")
+
+local LP    = Players.LocalPlayer
+local Mouse = LP:GetMouse()
+
+if getgenv().VoidLordUnload then pcall(getgenv().VoidLordUnload) end
+
+getgenv().VoidLordConfig = {
+    SwordName  = "VoidLordSword",
+    SwordCount = 10,
+    ScanRadius = 50,
+    Key        = Enum.KeyCode.One,
+
+    -- Vòng dưới chân
+    HideRadius = 3,
+    Reveal     = 0.5,
+    SwordLen   = 3.5,
+    RingSpin   = 10,
+
+    -- Lốc kiếm lấp đầy vòng tròn
+    FormHeight  = 20,
+    HeightGap   = 2.5,
+    HeightOsc   = 1.2,
+    Circles     = 3,
+    BaseRadius  = 20,
+    RadiusGap   = 3,
+    RadiusSweep = 6,
+    OscStep     = 0.09,
+    JumpStep    = 1.1,
+    TipLean     = 0.35,
+
+    -- Đâm
+    RiseTime      = 0.4,
+    RiseHeight    = 10,
+    PlungeTime    = 1.3,
+    Stagger       = 0.035,
+    HoldAfterStab = 0.8,
+    HoverTime     = 3,
+
+    -- FX
+    FX = {
+        -- màu kiếm khi kích hoạt
+        SwordColor  = Color3.fromRGB(140, 60, 255),
+        SwordGlow   = Color3.fromRGB(180, 120, 255),
+        Material    = Enum.Material.Neon,
+
+        TrailColor  = Color3.fromRGB(130, 60, 255),
+        TrailFade   = Color3.fromRGB(40, 10, 80),
+        LightColor  = Color3.fromRGB(150, 90, 255),
+        LightRange  = 9,
+        LightBright = 2.2,
+
+        AuraRate    = 20,
+        AuraSpeed   = NumberRange.new(0.5, 2),
+        AuraSize    = 0.5,
+
+        ShockColor  = Color3.fromRGB(120, 60, 255),
+        ShockSize   = 16,
+        Particles   = 35,
+        ShakePower  = 0.4,
+        ShakeTime   = 0.35,
+
+        -- ★ HIỆU ỨNG KÍCH HOẠT [1]
+        LaunchRing    = 7,    -- bán kính vòng năng lượng bùng dưới đất
+        LaunchSparks  = 20,   -- tia lửa bùng tại chỗ kiếm
+        PillarHeight  = 40,   -- ★ cột sáng phủi lên khi kích hoạt
+        PillarWidth   = 5,
+        ArriveFlash   = 6,    -- kích thước lóe sáng khi kiếm tới vị trí trên đầu
+    },
+
+    TipRot = {180, 0, 0},
+    TouchSpam  = true,
+    TouchLoops = 15,
+}
+local CFG = getgenv().VoidLordConfig
+local PER_CIRCLE = math.ceil(CFG.SwordCount / CFG.Circles)
+
+--──────────── GUI ────────────
+local gui, lbl
+pcall(function()
+    gui = Instance.new("ScreenGui")
+    gui.Name = "VoidLordRain_GUI"
+    gui.ResetOnSpawn = false
+    gui.Parent = LP:WaitForChild("PlayerGui")
+    lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.fromOffset(420, 28)
+    lbl.Position = UDim2.fromOffset(12, 12)
+    lbl.BackgroundColor3 = Color3.new(0, 0, 0)
+    lbl.BackgroundTransparency = 0.4
+    lbl.TextColor3 = Color3.fromRGB(170, 120, 255)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 14
+    lbl.Text = "VoidLord v15.4: khởi động..."
+    lbl.Parent = gui
+end)
+
+local function status(text)
+    if lbl then lbl.Text = "VoidLord v15.4: " .. text end
+    pcall(function()
+        SG:SetCore("SendNotification", {Title = "Vạn Kiếm", Text = text, Duration = 3})
+    end)
+end
+
+--──────────── TRẠNG THÁI ────────────
+local state     = "hidden"
+local stabPhase = "rise"
+local swords    = {}
+local stormT0, stabT0, lastScan, frame = 0, 0, 0, 0
+local stabTarget, shakeT = nil, 0
+local fxMap = {}
+local arrivalDone = false -- ★ lóe sáng tới đích chỉ chạy 1 lần
+
+--──────────── TIỆN ÍCH ────────────
+local function getHandle(c)
+    return c:FindFirstChild("Handle") or c:FindFirstChildWhichIsA("BasePart")
+end
+
+local function rootPart()
+    local c = LP.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function downDir(flat)
+    return (Vector3.new(0, -1, 0) + flat * 0.45).Unit
+end
+
+local function tipDirOf(root)
+    local look = root.CFrame.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    flat = flat.Magnitude > 0.001 and flat.Unit or Vector3.new(0, 0, -1)
+    return (flat * CFG.TipLean + Vector3.new(0, -1, 0)).Unit
+end
+
+local function orient(cf)
+    local r = CFG.TipRot
+    return cf * CFrame.Angles(math.rad(r[1]), math.rad(r[2]), math.rad(r[3]))
+end
+
+local function easeOut(a) return 1 - (1 - a) * (1 - a) end
+local function easeIn(a)  return a * a end
+
+local gCacheT, gCacheY = 0, nil
+local function groundY(root)
+    if gCacheY and os.clock() - gCacheT < 0.25 then return gCacheY end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LP.Character}
+    local hit = workspace:Raycast(root.Position, Vector3.new(0, -15, 0), params)
+    local y = hit and hit.Position.Y or (root.Position.Y - 2.8)
+    gCacheT, gCacheY = os.clock(), y
+    return y
+end
+
+--──────────── GIỮ KIẾM THẬT SỐNG ────────────
+local function holdSword(h)
+    pcall(function()
+        for _, j in ipairs(h:GetJoints()) do j:Destroy() end
+    end)
+    h.Anchored   = false
+    h.CanCollide = false
+    h.Massless   = true
+    h.AssemblyLinearVelocity  = Vector3.zero
+    h.AssemblyAngularVelocity = Vector3.zero
+end
+
+--──────────── ★ FX KÍCH HOẠT: VÒNG BÙNG + CỘT SÁNG + LÓE TỚI ĐÍCH ────────────
+local function playSound(name, parent)
+    local s = Instance.new("Sound")
+    s.SoundId = "rbxasset://sounds/" .. name .. ".wav"
+    s.Volume, s.Parent = 1.2, parent
+    s:Play()
+    Debris:AddItem(s, 3)
+end
+
+-- vòng năng lượng bùng dưới đất tại chỗ mỗi kiếm đang cắm
+local function launchBurst(pos)
+    local F = CFG.FX
+    local ring = Instance.new("Part")
+    ring.Anchored, ring.CanCollide = true, false
+    ring.Shape, ring.Material, ring.Color = Enum.PartType.Cylinder, Enum.Material.Neon, F.ShockColor
+    ring.Transparency = 0.1
+    ring.Size = Vector3.new(0.15, 1.5, 1.5)
+    ring.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))
+    ring.Parent = workspace
+    TS:Create(ring, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = Vector3.new(0.15, F.LaunchRing * 2, F.LaunchRing * 2), Transparency = 1}):Play()
+    Debris:AddItem(ring, 0.45)
+
+    local pe = Instance.new("ParticleEmitter")
+    pe.Color = ColorSequence.new(F.SwordGlow, F.TrailFade)
+    pe.LightEmission = 1
+    pe.Speed = NumberRange.new(6, 14)
+    pe.Lifetime = NumberRange.new(0.3, 0.6)
+    pe.SpreadAngle = Vector2.new(180, 180)
+    pe.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.5),
+        NumberSequenceKeypoint.new(1, 0),
+    })
+    pe.Parent = ring
+    pe:Emit(F.LaunchSparks)
+end
+
+-- ★ CỘT SÁNG TÍM phủi từ đất lên khi kích hoạt
+local function lightPillar(pos)
+    local F = CFG.FX
+    local pillar = Instance.new("Part")
+    pillar.Anchored, pillar.CanCollide = true, false
+    pillar.Material, pillar.Color = Enum.Material.Neon, F.SwordGlow
+    pillar.Transparency = 0.3
+    pillar.Size = Vector3.new(F.PillarWidth, 0.5, F.PillarWidth)
+    pillar.CFrame = CFrame.new(pos)
+    pillar.Parent = workspace
+    -- dựng cột lên trời rồi tan từ dưới
+    TS:Create(pillar, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = Vector3.new(F.PillarWidth * 0.4, F.PillarHeight, F.PillarWidth * 0.4),
+         CFrame = CFrame.new(pos + Vector3.new(0, F.PillarHeight / 2, 0)), Transparency = 0.15}):Play()
+    task.delay(0.35, function()
+        TS:Create(pillar, TweenInfo.new(0.5), {Transparency = 1,
+            Size = Vector3.new(0.2, F.PillarHeight, 0.2)}):Play()
+    end)
+    Debris:AddItem(pillar, 1)
+end
+
+-- lóe sáng khi kiếm TỚI VỊ TRÍ trên đầu
+local function arriveBurst(pos)
+    local F = CFG.FX
+    local flash = Instance.new("Part")
+    flash.Anchored, flash.CanCollide = true, false
+    flash.Shape, flash.Material, flash.Color = Enum.PartType.Ball, Enum.Material.Neon, F.SwordGlow
+    flash.Transparency = 0.1
+    flash.Size = Vector3.new(1, 1, 1)
+    flash.CFrame = CFrame.new(pos)
+    flash.Parent = workspace
+    TS:Create(flash, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = Vector3.new(F.ArriveFlash, F.ArriveFlash, F.ArriveFlash), Transparency = 1}):Play()
+    Debris:AddItem(flash, 0.35)
+end
+
+--──────────── ★ BIẾN HÌNH KIẾM TÍM NEON ────────────
+local function colorizeSword(handle)
+    local F = CFG.FX
+    local acc = handle:FindFirstAncestorOfClass("Accessory")
+        or handle:FindFirstAncestorOfClass("Tool") or handle
+    for _, p in ipairs(acc:GetDescendants()) do
+        if p:IsA("BasePart") then
+            if not handle:GetAttribute("VoidColored") then
+                p:SetAttribute("VLOrigColor", p.Color)
+                p:SetAttribute("VLOrigMat", p.Material.Name)
+            end
+            p.Color = F.SwordColor
+            p.Material = F.Material
+        end
+    end
+    handle:SetAttribute("VoidColored", true)
+
+    local fx = fxMap[handle]
+    if fx and fx.li then
+        fx.li.Color, fx.li.Range, fx.li.Brightness =
+            F.SwordGlow, F.LightRange, F.LightBright
+    end
+end
+
+local function restoreSword(handle)
+    if not handle or not handle:GetAttribute("VoidColored") then return end
+    local acc = handle:FindFirstAncestorOfClass("Accessory")
+        or handle:FindFirstAncestorOfClass("Tool") or handle
+    for _, p in ipairs(acc:GetDescendants()) do
+        if p:IsA("BasePart") then
+            local c = p:GetAttribute("VLOrigColor")
+            local m = p:GetAttribute("VLOrigMat")
+            if c then p.Color = c end
+            if m then p.Material = Enum.Material[m] end
+        end
+    end
+    handle:SetAttribute("VoidColored", nil)
+
+    local fx = fxMap[handle]
+    if fx and fx.li then
+        fx.li.Color, fx.li.Range, fx.li.Brightness =
+            CFG.FX.LightColor, CFG.FX.LightRange, 1.6
+    end
+end
+
+--──────────── FX TRÊN KIẾM: TRAIL + HÀO QUANG + TIA NĂNG LƯỢNG ────────────
+local function addFX(h)
+    if fxMap[h] or not h or not h.Parent then return end
+    local F = CFG.FX
+    local a0 = Instance.new("Attachment"); a0.Position = Vector3.new(0,  1.4, 0); a0.Parent = h
+    local a1 = Instance.new("Attachment"); a1.Position = Vector3.new(0, -1.4, 0); a1.Parent = h
+    local tr = Instance.new("Trail")
+    tr.Attachment0, tr.Attachment1 = a0, a1
+    tr.Lifetime, tr.LightEmission, tr.FaceCamera = 0.3, 1, true
+    tr.Color = ColorSequence.new(F.TrailColor, F.TrailFade)
+    tr.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.1),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    tr.Enabled = false
+    tr.Parent = h
+    local li = Instance.new("PointLight")
+    li.Color, li.Range, li.Brightness = F.LightColor, F.LightRange, 1.6
+    li.Parent = h
+
+    local aura = Instance.new("ParticleEmitter")
+    aura.Color         = ColorSequence.new(F.SwordGlow, F.TrailFade)
+    aura.LightEmission = 1
+    aura.Rate          = F.AuraRate
+    aura.Speed         = F.AuraSpeed
+    aura.Lifetime      = NumberRange.new(0.3, 0.7)
+    aura.SpreadAngle   = Vector2.new(25, 25)
+    aura.Size          = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, F.AuraSize),
+        NumberSequenceKeypoint.new(1, 0),
+    })
+    aura.Enabled = false
+    aura.Parent = h
+
+    fxMap[h] = {a0 = a0, a1 = a1, tr = tr, li = li, aura = aura}
+end
+
+local function removeFX(h)
+    local fx = fxMap[h]
+    if fx then
+        for _, d in pairs(fx) do pcall(function() d:Destroy() end) end
+        fxMap[h] = nil
+    end
+end
+
+local function setTrails(on)
+    for _, fx in pairs(fxMap) do
+        if fx.tr then fx.tr.Enabled = on end
+    end
+end
+
+local function setAuras(on)
+    for _, fx in pairs(fxMap) do
+        if fx.aura then fx.aura.Enabled = on end
+    end
+end
+
+--──────────── FX CHẠM ĐÍCH ────────────
+local function impactFX(pos)
+    local F = CFG.FX
+    local host = Instance.new("Part")
+    host.Anchored, host.CanCollide, host.Transparency = true, false, 1
+    host.Size, host.CFrame = Vector3.one, CFrame.new(pos)
+    host.Parent = workspace
+
+    local shock = Instance.new("Part")
+    shock.Anchored, shock.CanCollide = true, false
+    shock.Shape, shock.Material, shock.Color = Enum.PartType.Ball, Enum.Material.Neon, F.ShockColor
+    shock.Transparency, shock.Size, shock.CFrame = 0.25, Vector3.new(2, 2, 2), CFrame.new(pos)
+    shock.Parent = workspace
+    TS:Create(shock, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Size = Vector3.new(F.ShockSize, F.ShockSize, F.ShockSize), Transparency = 1}):Play()
+    Debris:AddItem(shock, 0.6)
+
+    local pe = Instance.new("ParticleEmitter")
+    pe.Color = ColorSequence.new(F.ShockColor, F.TrailFade)
+    pe.LightEmission = 1
+    pe.Speed = NumberRange.new(12, 26)
+    pe.Lifetime = NumberRange.new(0.4, 0.9)
+    pe.SpreadAngle = Vector2.new(180, 180)
+    pe.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.7),
+        NumberSequenceKeypoint.new(1, 0),
+    })
+    pe.Parent = host
+    pe:Emit(F.Particles)
+
+    playSound("swordslash", host)
+    playSound("unsheath", host)
+    shakeT = F.ShakeTime
+    Debris:AddItem(host, 1.5)
+end
+
+--──────────── LỌC 10 KIẾM THẬT TRONG 50 STUD ────────────
+local function addSword(h)
+    for _, s in ipairs(swords) do
+        if s.handle == h then return end
+    end
+    holdSword(h)
+    addFX(h)
+    local idx = #swords
+    local circle = idx % CFG.Circles
+    local k = math.floor(idx / CFG.Circles)
+    table.insert(swords, {
+        handle = h,
+        lostAt = nil,
+        circle = circle,
+        phase  = (k / PER_CIRCLE) * math.pi * 2 + circle * 0.5,
+    })
+end
+
+local function scanSwords()
+    local root = rootPart()
+    if not root then return end
+    if LP.Character then
+        for _, acc in ipairs(LP.Character:GetChildren()) do
+            if #swords >= CFG.SwordCount then break end
+            if (acc:IsA("Accessory") or acc:IsA("Tool")) and acc.Name == CFG.SwordName then
+                local h = getHandle(acc)
+                if h then addSword(h) end
+            end
+        end
+    end
+    if #swords < CFG.SwordCount then
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if #swords >= CFG.SwordCount then break end
+            if (obj:IsA("Accessory") or obj:IsA("Tool")) and obj.Name == CFG.SwordName
+                and not obj:IsDescendantOf(LP.Character) then
+                local h = getHandle(obj)
+                if h and not h.Anchored
+                    and (h.Position - root.Position).Magnitude <= CFG.ScanRadius then
+                    local m = obj:FindFirstAncestorOfClass("Model")
+                    local onOther = m and m:FindFirstChildOfClass("Humanoid") and m ~= LP.Character
+                    if not onOther then addSword(h) end
+                end
+            end
+        end
+    end
+end
+
+local function pruneSwords()
+    local now = os.clock()
+    for i = #swords, 1, -1 do
+        local s = swords[i]
+        if not s.handle or not s.handle.Parent then
+            if not s.lostAt then s.lostAt = now end
+            if now - s.lostAt > 1.5 then
+                removeFX(s.handle)
+                table.remove(swords, i)
+                status("Kiếm bị server xoá — tự chiếm kiếm mới...")
+            end
+        else
+            s.lostAt = nil
+        end
+    end
+end
+
+--──────────────── CFrames ────────────────
+local function hideCF(i, n, root)
+    local spin  = os.clock() * CFG.RingSpin
+    local ang   = (i / n) * math.pi * 2 + spin
+    local horiz = Vector3.new(math.cos(ang), 0, math.sin(ang))
+    local gy    = groundY(root)
+    local halfUp  = CFG.SwordLen * 0.5 * 0.91
+    local centerY = gy + CFG.Reveal - halfUp
+    local pos = Vector3.new(root.Position.X, centerY, root.Position.Z)
+        + horiz * CFG.HideRadius
+    return orient(CFrame.lookAt(pos, pos + downDir(horiz)))
+end
+
+local function orbitCF(root, s, t, fr)
+    local dir = (s.circle % 2 == 0) and 1 or -1
+    local ang = s.phase + fr * CFG.JumpStep * dir
+    local sweep = 0.5 + 0.5 * math.sin(fr * CFG.OscStep + s.phase * 3.0)
+    local r0 = CFG.BaseRadius + s.circle * CFG.RadiusGap
+    local r  = r0 + sweep * CFG.RadiusSweep
+    local y = CFG.FormHeight + s.circle * CFG.HeightGap
+        + math.sin(fr * 0.05 + s.phase * 5.0) * CFG.HeightOsc
+    local horiz = Vector3.new(math.cos(ang), 0, math.sin(ang))
+    local pos   = root.Position + Vector3.new(0, y, 0) + horiz * r
+    return orient(CFrame.lookAt(pos, pos + tipDirOf(root)))
+end
+
+local function stabCF(i, n, tPos)
+    local ang   = (i / n) * math.pi * 2
+    local horiz = Vector3.new(math.cos(ang), 0, math.sin(ang))
+    local pos   = tPos + downDir(horiz) * 2.5
+    return orient(CFrame.lookAt(pos, tPos))
+end
+
+local function raiseCF(cf, h)
+    return CFrame.new(cf.Position + Vector3.new(0, h, 0)) * cf.Rotation
+end
+
+--──────────── MỤC TIÊU GẦN CHUỘT NHẤT ────────────
+local function findTargetNearMouse()
+    local ray = Mouse.UnitRay
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LP.Character}
+    local hit    = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+    local hitPos = hit and hit.Position or (ray.Origin + ray.Direction * 200)
+    local best, bestDist = nil, 30
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                local d = (hrp.Position - hitPos).Magnitude
+                if d < bestDist then best, bestDist = hrp, d end
+            end
+        end
+    end
+    return best or hitPos
+end
+
+local function spamTouch()
+    for _ = 1, CFG.TouchLoops do
+        for _, s in ipairs(swords) do
+            if stabTarget and stabTarget.Parent and s.handle then
+                pcall(firetouchinterest, s.handle, stabTarget, 0)
+                pcall(firetouchinterest, s.handle, stabTarget, 1)
+            end
+        end
+        task.wait(0.05)
+    end
+end
+
+local function updateShake(dt)
+    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    if shakeT > 0 then
+        shakeT -= dt
+        local p = CFG.FX.ShakePower * math.max(shakeT / CFG.FX.ShakeTime, 0)
+        local s = os.clock()
+        hum.CameraOffset = Vector3.new(math.sin(s * 47), math.sin(s * 53), math.sin(s * 61)) * p
+    else
+        hum.CameraOffset = Vector3.zero
+    end
+end
+
+--──────────── DRIVER ────────────
+local hbConn
+hbConn = RS.Heartbeat:Connect(function(dt)
+    pruneSwords()
+    updateShake(dt)
+
+    if #swords < CFG.SwordCount and os.clock() - lastScan > 1 then
+        lastScan = os.clock()
+        scanSwords()
+    end
+
+    if #swords == 0 then return end
+    local root = rootPart()
+    if not root then return end
+
+    --═══ VÒNG KIẾM DƯỚI CHÂN (màu gốc) ═══
+    if state == "hidden" then
+        if lbl then
+            lbl.Text = ("v15.4: %d/%d kiếm • ló %.1f stud • [1] tung lốc kiếm"):format(
+                #swords, CFG.SwordCount, CFG.Reveal)
+        end
+        for i, s in ipairs(swords) do
+            local h = s.handle
+            if h and h.Parent then
+                holdSword(h)
+                h.CFrame = hideCF(i, #swords, root)
+            end
+        end
+
+    --═══ LỐC KIẾM TÍM NEON ═══
+    elseif state == "storm" then
+        local t = os.clock() - stormT0
+        if t >= CFG.HoverTime then
+            stabTarget = findTargetNearMouse()
+            local tPos = typeof(stabTarget) == "Instance" and stabTarget.Position or stabTarget
+            for i, s in ipairs(swords) do
+                s.startCF  = s.handle and s.handle.CFrame
+                s.finalCF  = stabCF(i, #swords, tPos)
+                s.riseCF   = raiseCF(s.finalCF, CFG.RiseHeight)
+                s.impacted = false
+            end
+            stabPhase, stabT0 = "rise", os.clock()
+            state = "stab"
+            setTrails(true)
+            status("Đâm xuống chậm...")
+            if CFG.TouchSpam and typeof(stabTarget) == "Instance" and firetouchinterest then
+                task.spawn(spamTouch)
+            end
+            return
+        end
+        frame += 1
+        for _, s in ipairs(swords) do
+            local h = s.handle
+            if h and h.Parent then
+                holdSword(h)
+                local cf = orbitCF(root, s, t, frame)
+                h.CFrame = cf
+                -- ★ frame đầu tới đội hình: LÓE SÁNG từng kiếm (1 lần)
+                if not arrivalDone then
+                    arriveBurst(cf.Position)
+                end
+            end
+        end
+        if not arrivalDone then
+            arrivalDone = true
+            playSound("electronicpingshort", root)
+        end
+
+    --═══ HOẠT ẢNH ĐÂM 3 PHA ═══
+    elseif state == "stab" then
+        local t = os.clock() - stabT0
+        local allDone = true
+
+        if stabPhase == "rise" then
+            for i, s in ipairs(swords) do
+                local h = s.handle
+                if h and h.Parent then
+                    if not s.finalCF then
+                        s.startCF  = h.CFrame
+                        s.finalCF  = stabCF(i, #swords, root.Position)
+                        s.riseCF   = raiseCF(s.finalCF, CFG.RiseHeight)
+                        s.impacted = false
+                    end
+                    holdSword(h)
+                    local a = math.clamp((t - (i - 1) * CFG.Stagger) / CFG.RiseTime, 0, 1)
+                    h.CFrame = s.startCF:Lerp(s.riseCF, easeOut(a))
+                    if a < 1 then allDone = false end
+                end
+            end
+            if allDone then
+                stabPhase, stabT0 = "plunge", os.clock()
+                if swords[1] and swords[1].handle then
+                    local host = Instance.new("Part")
+                    host.Anchored, host.Transparency, host.CanCollide = true, 1, false
+                    host.Size = Vector3.one
+                    host.Position = swords[1].riseCF.Position
+                    host.Parent = workspace
+                    playSound("swordlunge", host)
+                    Debris:AddItem(host, 2)
+                end
+            end
+
+        elseif stabPhase == "plunge" then
+            for i, s in ipairs(swords) do
+                local h = s.handle
+                if h and h.Parent then
+                    holdSword(h)
+                    local a = math.clamp((t - (i - 1) * CFG.Stagger) / CFG.PlungeTime, 0, 1)
+                    h.CFrame = s.riseCF:Lerp(s.finalCF, easeIn(a))
+                    if a >= 1 and not s.impacted then
+                        s.impacted = true
+                        impactFX(s.finalCF.Position)
+                    end
+                    if a < 1 then allDone = false end
+                end
+            end
+            if allDone then
+                stabPhase, stabT0 = "hold", os.clock()
+            end
+
+        elseif stabPhase == "hold" then
+            for _, s in ipairs(swords) do
+                local h = s.handle
+                if h and h.Parent then
+                    holdSword(h)
+                    h.CFrame = s.finalCF
+                end
+            end
+            if t >= CFG.HoldAfterStab then
+                state, stabPhase = "hidden", "rise"
+                setTrails(false)
+                setAuras(false)
+                for _, s in ipairs(swords) do
+                    restoreSword(s.handle)
+                end
+                status("Kiếm đã tp lại dưới chân (trả màu gốc)")
+                return
+            end
+        end
+    end
+end)
+
+--──────────── ĐIỀU KHIỂN ────────────
+local keyConn
+keyConn = UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode ~= CFG.Key then return end
+    if state ~= "hidden" then return end
+
+    pruneSwords()
+    if #swords == 0 then scanSwords() end
+    if #swords == 0 then
+        status("KHÔNG thấy " .. CFG.SwordName .. " trong 50 stud!")
+        return
+    end
+
+    -- ★★★ HIỆU ỨNG KÍCH HOẠT ★★★
+    local root = rootPart()
+    if root then
+        local gy = groundY(root)
+        local basePos = Vector3.new(root.Position.X, gy + 0.1, root.Position.Z)
+
+        -- 1) vòng năng lượng bùng tại chỗ MỖI KIẾM đang cắm
+        for _, s in ipairs(swords) do
+            if s.handle and s.handle.Parent then
+                launchBurst(s.handle.Position)
+            end
+        end
+
+        -- 2) CỘT SÁNG TÍM phủi từ đất lên + tiếng kích hoạt
+        lightPillar(basePos)
+        playSound("swordlunge", root)
+
+        -- 3) kiếm biến TÍM NEON + tia năng lượng
+        for _, s in ipairs(swords) do
+            if s.handle and s.handle.Parent then
+                colorizeSword(s.handle)
+            end
+        end
+        setAuras(true)
+    end
+
+    arrivalDone = false
+    stormT0, frame = os.clock(), 0
+    state = "storm"
+    setTrails(false)
+    status(("KIẾM TÍM NEON! %d kiếm phủ r=20→32 — chờ %ds"):format(
+        #swords, CFG.HoverTime))
+end)
+
+LP.CharacterAdded:Connect(function()
+    for h in pairs(fxMap) do removeFX(h) end
+    swords = {}
+    state, stabPhase = "hidden", "rise"
+    arrivalDone = false
+    task.wait(1)
+    scanSwords()
+end)
+
+--──────────── UNLOAD ────────────
+getgenv().VoidLordUnload = function()
+    if hbConn then hbConn:Disconnect() end
+    if keyConn then keyConn:Disconnect() end
+    if gui then gui:Destroy() end
+    for _, s in ipairs(swords) do
+        restoreSword(s.handle)
+    end
+    for h in pairs(fxMap) do removeFX(h) end
+    local char = LP.Character
+    local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+    for _, s in ipairs(swords) do
+        local h = s.handle
+        if h and h.Parent and head then
+            h.CFrame = head.CFrame * CFrame.new(0, -0.6, 0)
+            local w = Instance.new("Weld")
+            w.Part0, w.Part1 = h, head
+            w.Parent = h
+        end
+    end
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.CameraOffset = Vector3.zero end
+    swords, state = {}, "off"
+    getgenv().VoidLordUnload = nil
+end
+
+--──────────── LOAD ────────────
+scanSwords()
+if #swords > 0 then
+    status(("Đã lọc %d/%d kiếm → vòng quanh chân (ló %.1f stud)"):format(
+        #swords, CFG.SwordCount, CFG.Reveal))
+else
+    status("Chưa thấy kiếm — tự quét lại mỗi giây...")
+end
