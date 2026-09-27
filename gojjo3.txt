@@ -1,13 +1,8 @@
 --════════════════════════════════════════════════════════════════
---  VOIDLORD SWORD • v15.4 FULL • HIỆU ỨNG KÍCH HOẠT KHI BẤM [1]
+--  VOIDLORD SWORD • v15.4 CLEAN • KHÔNG GUI / KHÔNG THÔNG BÁO
 --  ► Load: 10 kiếm thật (50 stud) → vòng cắm đất, ló đúng Reveal stud
---  ► Bấm [1]: BÙNG NỞ KÍCH HOẠT —
---    • vòng năng lượng + tia lửa bùng tại chỗ mỗi kiếm đang cắm
---    • CỘT SÁNG TÍM phủi từ đất lên trời
---    • kiếm bay lên đầu, TỚI ĐÍCH LÓE SÁNG từng kiếm (flash burst)
---    • toàn bộ kiếm biến TÍM NEON + hào quang + tia năng lượng
---    • tp liên tục quanh 3 vòng tròn 20→32 stud lấp đầy
---  ► Chờ 3s → nâng → ĐÂM CHẬM lệch pha → nổ → về chân TRẢ MÀU GỐC
+--  ► Bấm [1]: vòng bùng + cột sáng + kiếm tím neon + lốc 3 vòng 20→32
+--  ► Chờ 3s → đâm chậm lệch pha → nổ → về chân trả màu gốc
 --  ► getgenv().VoidLordUnload() = tắt
 --════════════════════════════════════════════════════════════════
 
@@ -16,7 +11,6 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService("Players")
 local UIS     = game:GetService("UserInputService")
 local RS      = game:GetService("RunService")
-local SG      = game:GetService("StarterGui")
 local TS      = game:GetService("TweenService")
 local Debris  = game:GetService("Debris")
 
@@ -59,7 +53,6 @@ getgenv().VoidLordConfig = {
 
     -- FX
     FX = {
-        -- màu kiếm khi kích hoạt
         SwordColor  = Color3.fromRGB(140, 60, 255),
         SwordGlow   = Color3.fromRGB(180, 120, 255),
         Material    = Enum.Material.Neon,
@@ -80,12 +73,11 @@ getgenv().VoidLordConfig = {
         ShakePower  = 0.4,
         ShakeTime   = 0.35,
 
-        -- ★ HIỆU ỨNG KÍCH HOẠT [1]
-        LaunchRing    = 7,    -- bán kính vòng năng lượng bùng dưới đất
-        LaunchSparks  = 20,   -- tia lửa bùng tại chỗ kiếm
-        PillarHeight  = 40,   -- ★ cột sáng phủi lên khi kích hoạt
+        LaunchRing    = 7,
+        LaunchSparks  = 20,
+        PillarHeight  = 40,
         PillarWidth   = 5,
-        ArriveFlash   = 6,    -- kích thước lóe sáng khi kiếm tới vị trí trên đầu
+        ArriveFlash   = 6,
     },
 
     TipRot = {180, 0, 0},
@@ -95,32 +87,6 @@ getgenv().VoidLordConfig = {
 local CFG = getgenv().VoidLordConfig
 local PER_CIRCLE = math.ceil(CFG.SwordCount / CFG.Circles)
 
---──────────── GUI ────────────
-local gui, lbl
-pcall(function()
-    gui = Instance.new("ScreenGui")
-    gui.Name = "VoidLordRain_GUI"
-    gui.ResetOnSpawn = false
-    gui.Parent = LP:WaitForChild("PlayerGui")
-    lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.fromOffset(420, 28)
-    lbl.Position = UDim2.fromOffset(12, 12)
-    lbl.BackgroundColor3 = Color3.new(0, 0, 0)
-    lbl.BackgroundTransparency = 0.4
-    lbl.TextColor3 = Color3.fromRGB(170, 120, 255)
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 14
-    lbl.Text = "VoidLord v15.4: khởi động..."
-    lbl.Parent = gui
-end)
-
-local function status(text)
-    if lbl then lbl.Text = "VoidLord v15.4: " .. text end
-    pcall(function()
-        SG:SetCore("SendNotification", {Title = "Vạn Kiếm", Text = text, Duration = 3})
-    end)
-end
-
 --──────────── TRẠNG THÁI ────────────
 local state     = "hidden"
 local stabPhase = "rise"
@@ -128,7 +94,7 @@ local swords    = {}
 local stormT0, stabT0, lastScan, frame = 0, 0, 0, 0
 local stabTarget, shakeT = nil, 0
 local fxMap = {}
-local arrivalDone = false -- ★ lóe sáng tới đích chỉ chạy 1 lần
+local arrivalDone = false
 
 --──────────── TIỆN ÍCH ────────────
 local function getHandle(c)
@@ -183,7 +149,7 @@ local function holdSword(h)
     h.AssemblyAngularVelocity = Vector3.zero
 end
 
---──────────── ★ FX KÍCH HOẠT: VÒNG BÙNG + CỘT SÁNG + LÓE TỚI ĐÍCH ────────────
+--──────────── FX KÍCH HOẠT ────────────
 local function playSound(name, parent)
     local s = Instance.new("Sound")
     s.SoundId = "rbxasset://sounds/" .. name .. ".wav"
@@ -192,7 +158,6 @@ local function playSound(name, parent)
     Debris:AddItem(s, 3)
 end
 
--- vòng năng lượng bùng dưới đất tại chỗ mỗi kiếm đang cắm
 local function launchBurst(pos)
     local F = CFG.FX
     local ring = Instance.new("Part")
@@ -220,7 +185,6 @@ local function launchBurst(pos)
     pe:Emit(F.LaunchSparks)
 end
 
--- ★ CỘT SÁNG TÍM phủi từ đất lên khi kích hoạt
 local function lightPillar(pos)
     local F = CFG.FX
     local pillar = Instance.new("Part")
@@ -230,7 +194,6 @@ local function lightPillar(pos)
     pillar.Size = Vector3.new(F.PillarWidth, 0.5, F.PillarWidth)
     pillar.CFrame = CFrame.new(pos)
     pillar.Parent = workspace
-    -- dựng cột lên trời rồi tan từ dưới
     TS:Create(pillar, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         {Size = Vector3.new(F.PillarWidth * 0.4, F.PillarHeight, F.PillarWidth * 0.4),
          CFrame = CFrame.new(pos + Vector3.new(0, F.PillarHeight / 2, 0)), Transparency = 0.15}):Play()
@@ -241,7 +204,6 @@ local function lightPillar(pos)
     Debris:AddItem(pillar, 1)
 end
 
--- lóe sáng khi kiếm TỚI VỊ TRÍ trên đầu
 local function arriveBurst(pos)
     local F = CFG.FX
     local flash = Instance.new("Part")
@@ -256,7 +218,7 @@ local function arriveBurst(pos)
     Debris:AddItem(flash, 0.35)
 end
 
---──────────── ★ BIẾN HÌNH KIẾM TÍM NEON ────────────
+--──────────── BIẾN HÌNH KIẾM TÍM NEON ────────────
 local function colorizeSword(handle)
     local F = CFG.FX
     local acc = handle:FindFirstAncestorOfClass("Accessory")
@@ -301,7 +263,7 @@ local function restoreSword(handle)
     end
 end
 
---──────────── FX TRÊN KIẾM: TRAIL + HÀO QUANG + TIA NĂNG LƯỢNG ────────────
+--──────────── FX TRÊN KIẾM ────────────
 local function addFX(h)
     if fxMap[h] or not h or not h.Parent then return end
     local F = CFG.FX
@@ -450,7 +412,6 @@ local function pruneSwords()
             if now - s.lostAt > 1.5 then
                 removeFX(s.handle)
                 table.remove(swords, i)
-                status("Kiếm bị server xoá — tự chiếm kiếm mới...")
             end
         else
             s.lostAt = nil
@@ -557,12 +518,8 @@ hbConn = RS.Heartbeat:Connect(function(dt)
     local root = rootPart()
     if not root then return end
 
-    --═══ VÒNG KIẾM DƯỚI CHÂN (màu gốc) ═══
+    --═══ VÒNG KIẾM DƯỚI CHÂN ═══
     if state == "hidden" then
-        if lbl then
-            lbl.Text = ("v15.4: %d/%d kiếm • ló %.1f stud • [1] tung lốc kiếm"):format(
-                #swords, CFG.SwordCount, CFG.Reveal)
-        end
         for i, s in ipairs(swords) do
             local h = s.handle
             if h and h.Parent then
@@ -586,7 +543,6 @@ hbConn = RS.Heartbeat:Connect(function(dt)
             stabPhase, stabT0 = "rise", os.clock()
             state = "stab"
             setTrails(true)
-            status("Đâm xuống chậm...")
             if CFG.TouchSpam and typeof(stabTarget) == "Instance" and firetouchinterest then
                 task.spawn(spamTouch)
             end
@@ -599,7 +555,6 @@ hbConn = RS.Heartbeat:Connect(function(dt)
                 holdSword(h)
                 local cf = orbitCF(root, s, t, frame)
                 h.CFrame = cf
-                -- ★ frame đầu tới đội hình: LÓE SÁNG từng kiếm (1 lần)
                 if not arrivalDone then
                     arriveBurst(cf.Position)
                 end
@@ -677,7 +632,6 @@ hbConn = RS.Heartbeat:Connect(function(dt)
                 for _, s in ipairs(swords) do
                     restoreSword(s.handle)
                 end
-                status("Kiếm đã tp lại dưới chân (trả màu gốc)")
                 return
             end
         end
@@ -693,29 +647,22 @@ keyConn = UIS.InputBegan:Connect(function(input, gpe)
 
     pruneSwords()
     if #swords == 0 then scanSwords() end
-    if #swords == 0 then
-        status("KHÔNG thấy " .. CFG.SwordName .. " trong 50 stud!")
-        return
-    end
+    if #swords == 0 then return end
 
-    -- ★★★ HIỆU ỨNG KÍCH HOẠT ★★★
     local root = rootPart()
     if root then
         local gy = groundY(root)
         local basePos = Vector3.new(root.Position.X, gy + 0.1, root.Position.Z)
 
-        -- 1) vòng năng lượng bùng tại chỗ MỖI KIẾM đang cắm
         for _, s in ipairs(swords) do
             if s.handle and s.handle.Parent then
                 launchBurst(s.handle.Position)
             end
         end
 
-        -- 2) CỘT SÁNG TÍM phủi từ đất lên + tiếng kích hoạt
         lightPillar(basePos)
         playSound("swordlunge", root)
 
-        -- 3) kiếm biến TÍM NEON + tia năng lượng
         for _, s in ipairs(swords) do
             if s.handle and s.handle.Parent then
                 colorizeSword(s.handle)
@@ -728,8 +675,6 @@ keyConn = UIS.InputBegan:Connect(function(input, gpe)
     stormT0, frame = os.clock(), 0
     state = "storm"
     setTrails(false)
-    status(("KIẾM TÍM NEON! %d kiếm phủ r=20→32 — chờ %ds"):format(
-        #swords, CFG.HoverTime))
 end)
 
 LP.CharacterAdded:Connect(function()
@@ -745,7 +690,6 @@ end)
 getgenv().VoidLordUnload = function()
     if hbConn then hbConn:Disconnect() end
     if keyConn then keyConn:Disconnect() end
-    if gui then gui:Destroy() end
     for _, s in ipairs(swords) do
         restoreSword(s.handle)
     end
@@ -769,9 +713,3 @@ end
 
 --──────────── LOAD ────────────
 scanSwords()
-if #swords > 0 then
-    status(("Đã lọc %d/%d kiếm → vòng quanh chân (ló %.1f stud)"):format(
-        #swords, CFG.SwordCount, CFG.Reveal))
-else
-    status("Chưa thấy kiếm — tự quét lại mỗi giây...")
-end
