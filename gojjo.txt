@@ -1,29 +1,4 @@
---[[
-    ============================================================
-    FE HATS - ANTI-FLING EDITION
-    Fix lỗi fling khi nhúng vào script lớn
-    ============================================================
-    NGUYÊN NHÂN FLING:
-      1. Script bị nạp 2 lần -> 2 bộ weld + 2 loop đánh nhau
-      2. Weld lạ (AccessoryWeld server trả về) bị phá TRỄ 1 frame (do spawn)
-         -> 2 weld kéo handle -> xung lượng nổ -> văng nhân vật
-      3. Handle bị game/script khác reset: Anchored=true / CanCollide=true
-         -> handle ANCHORED mà vẫn welded vào Head -> lực solver khổng lồ
-      4. SimulationRadius = huge -> client mô phỏng cả map -> nhận xung lạ
-      5. CFrame NaN/hỏng -> physics bung
 
-    FIX:
-      [1] Chống nạp trùng: tự _Stop() bản cũ trước khi chạy
-      [2] Phá weld lạ NGAY LẬP TỨC (không spawn), quét cả trong Accessory
-      [3] Ép thuộc tính MỖI FRAME: Anchored=false, CanCollide=false, Massless
-      [4] CollisionGroup "FEHatsNC" + CustomPhysicalProperties (không truyền xung)
-      [5] Watchdog Anti-Fling: kẹp AssemblyLinearVelocity / AngularVelocity,
-          hồi vị trí khi bị dịch chuyển bất thường (dùng FEHats.MarkTeleport()
-          để báo watchdog biết lần dịch chuyển đó là chủ đích của script lớn)
-      [6] NaN-guard đủ 12 thành phần CFrame + kẹp chiều dài C0
-      [7] Update weld 1 lần/frame ở Stepped (bản cũ chạy Stepped + Heartbeat = 2x)
-      [8] API mới: FEHats.Stop() và FEHats.MarkTeleport()
-]]
 
 local env = (getgenv and getgenv()) or _G
 
@@ -49,7 +24,7 @@ local function Main()
         JumpPower        = nil,
         MaxDistance      = 400,
         RescanInterval   = 1,
-        OrbitSpeedMul    = 1,
+        OrbitSpeedMul    = 4,
         SpinSpeedMul     = 1,
         RingRadiusMul    = 1,
         RingBaseRadius   = 1.5,
