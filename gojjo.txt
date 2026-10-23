@@ -1,1 +1,555 @@
 
+local function Main()
+
+-- ============================================================
+-- SETTINGS
+-- ============================================================
+local Settings = {
+    HatNames         = { "RockAccessory"}, -- Danh sách các tên phụ kiện được nhận diện
+    IdleYOffset      = 80,
+    SoundId          = "rbxassetid://126311349373144",
+    ZeroVelocity     = false,           -- bật là đi chậm lại
+    Massless         = true,
+    SimRadius        = true,
+    WalkSpeed        = nil,
+    JumpPower        = nil,
+    MaxDistance      = 400,
+    RescanInterval   = 1,
+    OrbitSpeedMul    = 1,
+    SpinSpeedMul     = 1,
+    RingRadiusMul    = 1,
+    RingBaseRadius   = 1.5,
+    RingHeight       = -2,
+    LoudnessDiv      = 300,
+    EnableKeys       = true,            -- Q idle, E oscillate, R orbit chuột
+}
+
+-- ============================================================
+-- SERVICES / SHORTCUTS
+-- ============================================================
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS        = game:GetService("UserInputService")
+
+local IT, CF, VT, C3 = Instance.new, CFrame.new, Vector3.new, Color3.new
+local Player = Players.LocalPlayer
+local Mouse  = Player:GetMouse()
+
+local DEFAULT_EFFECT_OFFSETS = {
+    CF( 1.5, 0.5,  0  ),
+    CF(-1.5, 0.5,  0  ),
+    CF( 0,   0.5,  1.5),
+    CF( 0,   0.5, -1.5),
+}
+
+local function IdleXFor(i)
+    local slot = (i - 1) % 4
+    local row  = math.floor((i - 1) / 4)
+    return ({ -4.5, -1.5, 1.5, 4.5 })[slot + 1] + row * 6
+end
+
+local function validCF(cf)
+    local p = cf.p
+    local x, y, z = p.X, p.Y, p.Z
+    if x ~= x or y ~= y or z ~= z then return false end
+    local inf = math.huge
+    if math.abs(x) == inf or math.abs(y) == inf or math.abs(z) == inf then return false end
+    local lv = cf.lookVector
+    if lv.X ~= lv.X or lv.Y ~= lv.Y or lv.Z ~= lv.Z then return false end
+    return true
+end
+
+-- ============================================================
+-- STATE
+-- ============================================================
+local Character, Head, RootPart, LeftArm, Humanoid, Effects, Sound
+local HATS = {}
+local FEHats = {}
+
+-- ============================================================
+-- SETUP
+-- ============================================================
+local function GetLeftArm(char)
+    return char:FindFirstChild("Left Arm")
+        or char:FindFirstChild("LeftHand")
+        or char:FindFirstChild("LeftUpperArm")
+        or char:FindFirstChild("Head")
+end
+
+local function SetupSound()
+    if Sound and Sound.Parent then return end
+    if Settings.SoundId == "" then return end
+    Sound = IT("Sound")
+    Sound.Name = "FEHatsMusic"
+    Sound.SoundId = Settings.SoundId
+    Sound.Looped = true
+    Sound.Volume = 1
+    Sound.Parent = workspace
+    Sound:Play()
+end
+
+local function SetupEffects()
+    Effects = workspace:FindFirstChild("FEHatsEffects")
+    if not Effects then
+        Effects = IT("Folder")
+        Effects.Name = "FEHatsEffects"
+        Effects.Parent = workspace
+    end
+end
+
+local function isJoint(c)
+    return c:IsA("Weld") or c:IsA("ManualWeld") or c:IsA("Motor6D") or c:IsA("Motor")
+end
+
+local function SetupHatWeld(hat)
+    if not hat or not hat.handle or not hat.handle.Parent or not Head then return end
+
+    for _, c in ipairs(hat.handle:GetChildren()) do
+        if isJoint(c) then pcall(function() c:Destroy() end) end
+    end
+
+    hat.handle.Anchored   = false
+    hat.handle.CanCollide = false
+    pcall(function() hat.handle.CanTouch = false end)
+    pcall(function() hat.handle.CanQuery = false end)
+    if Settings.Massless then
+        pcall(function() hat.handle.Massless = true end)
+    end
+
+    local w = IT("Weld")
+    w.Name  = "FEHatWeld"
+    w.Part0 = Head
+    w.Part1 = hat.handle
+    w.C0    = CF(IdleXFor(hat.index), Settings.IdleYOffset, 0)
+    w.C1    = CF(0, 0, 0)
+    hat.weld = w
+    w.Parent = hat.handle
+
+    if hat.conn then hat.conn:Disconnect() end
+    hat.conn = hat.handle.ChildAdded:Connect(function(c)
+        if c ~= hat.weld and isJoint(c) then
+            spawn(function() pcall(function() c:Destroy() end) end)
+        end
+    end)
+end
+
+local function Reindex()
+    for i, h in ipairs(HATS) do h.index = i end
+end
+
+local function Rescan()
+    if not Character or not Character.Parent then return end
+
+    local known = {}
+    for i = #HATS, 1, -1 do
+        local h = HATS[i]
+        if not h.accessory or not h.accessory.Parent or not h.handle or not h.handle.Parent then
+            if h.conn then h.conn:Disconnect() end
+            table.remove(HATS, i)
+        else
+            known[h.accessory] = true
+        end
+    end
+
+    local added = 0
+    for _, child in ipairs(Character:GetChildren()) do
+        if child:IsA("Accessory") and not known[child] then
+            local allowed = false
+            if Settings.HatNames then
+                for _, name in ipairs(Settings.HatNames) do
+                    if child.Name == name then
+                        allowed = true
+                        break
+                    end
+                end
+            else
+                allowed = true
+            end
+
+            if allowed then
+                local handle = child:FindFirstChild("Handle") or child:FindFirstChildWhichIsA("BasePart")
+                if handle then
+                    local hat = { accessory = child, handle = handle, index = #HATS + 1, state = "idle" }
+                    table.insert(HATS, hat)
+                    SetupHatWeld(hat)
+                    added = added + 1
+                end
+            end
+        end
+    end
+    Reindex()
+    if added > 0 then
+        print("[FE Hats] +" .. added .. " hat, tong " .. #HATS)
+    end
+end
+
+local function BindCharacter(char)
+    Character = char
+    Head     = char:WaitForChild("Head", 10)
+    RootPart = char:WaitForChild("HumanoidRootPart", 10)
+    Humanoid = char:WaitForChild("Humanoid", 10)
+    LeftArm  = GetLeftArm(char)
+    for _, h in ipairs(HATS) do if h.conn then h.conn:Disconnect() end end
+    HATS = {}
+
+    SetupEffects()
+    SetupSound()
+
+    if Settings.SimRadius then
+        pcall(function() sethiddenproperty(Player, "SimulationRadius", math.huge) end)
+        pcall(function() Player.MaximumSimulationRadius = math.huge end)
+    end
+
+    Rescan()
+
+    delay(5, function()
+        if Character == char and #HATS == 0 then
+            local names = {}
+            for _, c in ipairs(char:GetChildren()) do
+                if c:IsA("Accessory") then table.insert(names, c.Name) end
+            end
+            local targetStr = Settings.HatNames and table.concat(Settings.HatNames, ", ") or "all"
+            warn("[FE Hats] khong thay accessory '" .. tostring(targetStr) ..
+                 "'. dang deo: " .. (#names > 0 and table.concat(names, ", ") or "(khong co gi)"))
+        end
+    end)
+end
+
+-- ============================================================
+-- PUBLIC API
+-- ============================================================
+local function SetHatIdle(index)
+    local hat = HATS[index]
+    if not hat then return end
+    hat.state, hat.target, hat.attachedTo = "idle", nil, nil
+end
+
+local function SetAllHatsIdle()
+    for i = 1, #HATS do SetHatIdle(i) end
+end
+
+local function pickOffset(offsets, used)
+    return offsets[used + 1] or DEFAULT_EFFECT_OFFSETS[(used % 4) + 1]
+end
+
+local function AttachHatsToEffect(effectPart, count, offsets)
+    if not effectPart or not effectPart.Parent or #HATS == 0 then return end
+    count   = math.clamp(count or #HATS, 1, #HATS)
+    offsets = offsets or DEFAULT_EFFECT_OFFSETS
+    local used = 0
+    for i = 1, #HATS do
+        if used < count then
+            local h = HATS[i]
+            h.state, h.target, h.offset, h.attachedTo = "static", effectPart, pickOffset(offsets, used), effectPart
+            used = used + 1
+        else
+            SetHatIdle(i)
+        end
+    end
+end
+
+local function AttachHatsWithSpread(effectPart, count, offsets, duration)
+    if not effectPart or not effectPart.Parent or #HATS == 0 then return end
+    count   = math.clamp(count or #HATS, 1, #HATS)
+    offsets = offsets or DEFAULT_EFFECT_OFFSETS
+    duration = duration or 0.35
+    local used, t0 = 0, tick()
+    for i = 1, #HATS do
+        if used < count then
+            local h = HATS[i]
+            h.state, h.target = "spread", effectPart
+            h.targetOffset, h.spreadStart, h.spreadDuration = pickOffset(offsets, used), t0, duration
+            h.attachedTo = effectPart
+            used = used + 1
+        else
+            SetHatIdle(i)
+        end
+    end
+end
+
+local function AttachHatsWithContinuousSpread(effectPart, count, offsets, spreadSpeed)
+    if not effectPart or not effectPart.Parent or #HATS == 0 then return end
+    count   = math.clamp(count or #HATS, 1, #HATS)
+    offsets = offsets or DEFAULT_EFFECT_OFFSETS
+    spreadSpeed = spreadSpeed or 2
+    local used, t0 = 0, tick()
+    for i = 1, #HATS do
+        if used < count then
+            local off = pickOffset(offsets, used)
+            local h = HATS[i]
+            h.state, h.target = "continuous_spread", effectPart
+            h.basePos, h.baseRot = off.p, off - off.p
+            h.spreadStart, h.spreadSpeed, h.attachedTo = t0, spreadSpeed, effectPart
+            used = used + 1
+        else
+            SetHatIdle(i)
+        end
+    end
+end
+
+local function AttachHatsOscillateToMouse(count, oscillationSpeed, spinSpeed)
+    if #HATS == 0 then return end
+    count = math.clamp(count or #HATS, 1, #HATS)
+    local used, t0 = 0, tick()
+    for i = 1, #HATS do
+        if used < count then
+            local h = HATS[i]
+            h.state = "oscillate_mouse"
+            h.phase = (used / count) * math.pi * 2
+            h.oscillationSpeed = oscillationSpeed or 15
+            h.spinSpeed = spinSpeed or 20
+            h.spreadStart, h.attachedTo = t0, nil
+            used = used + 1
+        else
+            SetHatIdle(i)
+        end
+    end
+end
+
+local function AttachHatsPointingToMouse(count, radius, orbitSpeed, spinSpeed)
+    if #HATS == 0 then return end
+    count = math.clamp(count or #HATS, 1, #HATS)
+    local used, t0 = 0, tick()
+    for i = 1, #HATS do
+        if used < count then
+            local h = HATS[i]
+            h.state = "mouse_orbit"
+            h.phase = (used / count) * math.pi * 2
+            h.radius = radius or 2.5
+            h.orbitSpeed = orbitSpeed or 2.5
+            h.spinSpeed = spinSpeed or 6
+            h.spreadStart, h.attachedTo = t0, nil
+            used = used + 1
+        else
+            SetHatIdle(i)
+        end
+    end
+end
+
+local function MakeHatAnchor(parentPart, offset)
+    if not parentPart or not parentPart.Parent then return nil end
+    local a = IT("Part")
+    a.Name, a.Transparency, a.CanCollide, a.Anchored = "HatAnchor", 1, false, true
+    pcall(function() a.CanQuery = false end)
+    a.Size, a.Color, a.Material = VT(0.1, 0.1, 0.1), C3(0, 0, 0), Enum.Material.Neon
+    a.CFrame = parentPart.CFrame * (offset or CF(0, 0, 0))
+    a.Parent = (Effects and Effects.Parent) and Effects or Character
+    local ref = IT("ObjectValue")
+    ref.Name = "HatAnchorParentRef"
+    ref.Value = parentPart
+    ref.Parent = a
+    return a
+end
+
+local function GetHatCount() return #HATS end
+
+local function Set(key, value)
+    Settings[key] = value
+    if key == "Massless" then
+        for _, h in ipairs(HATS) do
+            pcall(function() h.handle.Massless = value and true or false end)
+        end
+    end
+end
+
+FEHats.Settings = Settings
+FEHats.Set = Set
+FEHats.Rescan = Rescan
+FEHats.SetHatIdle = SetHatIdle
+FEHats.SetAllHatsIdle = SetAllHatsIdle
+FEHats.AttachHatsToEffect = AttachHatsToEffect
+FEHats.AttachHatsWithSpread = AttachHatsWithSpread
+FEHats.AttachHatsWithContinuousSpread = AttachHatsWithContinuousSpread
+FEHats.AttachHatsOscillateToMouse = AttachHatsOscillateToMouse
+FEHats.AttachHatsPointingToMouse = AttachHatsPointingToMouse
+FEHats.MakeHatAnchor = MakeHatAnchor
+FEHats.GetHatCount = GetHatCount
+
+local env = (getgenv and getgenv()) or _G
+for k, v in pairs(FEHats) do
+    if k ~= "Set" and k ~= "Rescan" then env[k] = v end
+end
+env.FEHats = FEHats
+
+-- ============================================================
+-- MAIN LOOP
+-- ============================================================
+local function mouseTarget(from, dir)
+    local p = from + dir * 10
+    pcall(function()
+        if Mouse and Mouse.Hit then p = Mouse.Hit.p end
+    end)
+    return p
+end
+
+local function desiredFor(hat, i)
+    local st = hat.state
+
+    if st == "idle" then
+        local loudness = (Sound and Sound.Parent and Sound.PlaybackLoudness) or 0
+        local norm = loudness / Settings.LoudnessDiv
+        local ringRadius = (Settings.RingBaseRadius + norm * 20.0) * Settings.RingRadiusMul
+        local ringCenter = RootPart.Position + VT(0, Settings.RingHeight, 0)
+        local orbitSpeed = (1 + norm * 10) * Settings.OrbitSpeedMul
+        local phase = (i - 1) * 2.39996
+        local ang = tick() * orbitSpeed + phase
+        local pos = ringCenter + VT(math.cos(ang) * ringRadius, 0, math.sin(ang) * ringRadius)
+        return CFrame.new(pos) * CFrame.Angles(0, tick() * (2 + norm * 20) * Settings.SpinSpeedMul, 0)
+
+    elseif st == "static" and hat.target and hat.target.Parent then
+        return hat.target.CFrame * (hat.offset or CF())
+
+    elseif st == "spread" and hat.target and hat.target.Parent then
+        local t = math.clamp((tick() - (hat.spreadStart or tick())) / (hat.spreadDuration or 0.35), 0, 1)
+        local eased = 1 - (1 - t) ^ 3
+        return hat.target.CFrame * CF():lerp(hat.targetOffset or CF(), eased)
+
+    elseif st == "continuous_spread" and hat.target and hat.target.Parent then
+        local scale = (tick() - (hat.spreadStart or tick())) * (hat.spreadSpeed or 2)
+        return hat.target.CFrame * (CF((hat.basePos or VT()) * scale) * (hat.baseRot or CF()))
+
+    elseif st == "oscillate_mouse" then
+        local elapsed = tick() - (hat.spreadStart or tick())
+        local spinAng = elapsed * (hat.spinSpeed or 20) * Settings.SpinSpeedMul
+        local armPos = (LeftArm and LeftArm.Parent and LeftArm.Position) or RootPart.Position
+        local targetPos = mouseTarget(armPos, RootPart.CFrame.lookVector)
+        local line = targetPos - armPos
+        local len = line.Magnitude
+        if len < 0.1 then
+            line, len = RootPart.CFrame.lookVector, 5
+        else
+            line = line.Unit
+        end
+        len = math.min(len, Settings.MaxDistance)
+
+        local osc = (math.sin(elapsed * (hat.oscillationSpeed or 15) * Settings.OrbitSpeedMul) + 1) / 2
+        local oscPos = armPos + line * (len * osc)
+        local up = VT(0, 1, 0)
+        if math.abs(line:Dot(up)) > 0.99 then up = VT(1, 0, 0) end
+        local perp1 = line:Cross(up)
+        if perp1.Magnitude < 0.001 then perp1 = VT(1, 0, 0) else perp1 = perp1.Unit end
+        local perp2 = line:Cross(perp1).Unit
+        local a = hat.phase or 0
+        local off = perp1 * math.cos(a) * 0.4 + perp2 * math.sin(a) * 0.4
+        return CFrame.new(oscPos + off) * CFrame.Angles(0, spinAng, 0)
+
+    elseif st == "mouse_orbit" then
+        local elapsed = tick() - (hat.spreadStart or tick())
+        local angle = elapsed * (hat.orbitSpeed or 2.5) * Settings.OrbitSpeedMul + (hat.phase or 0)
+        local r = (hat.radius or 2.5) * Settings.RingRadiusMul
+        local rootCF = RootPart.CFrame
+        local rootPos = rootCF.p
+        local targetPos = mouseTarget(rootPos, rootCF.lookVector)
+        local localOff = VT(math.cos(angle) * r, 0.5 + math.sin(angle * 2) * 0.4, math.sin(angle) * r)
+        local hatPos = rootPos + rootCF:vectorToWorldSpace(localOff)
+        local look = targetPos - hatPos
+        if look.Magnitude < 0.1 then look = rootCF.lookVector else look = look.Unit end
+        local base
+        if math.abs(look.Y) > 0.99 then
+            base = CFrame.new(hatPos)
+        else
+            base = CFrame.new(hatPos, hatPos + look)
+        end
+        return base * CFrame.Angles(0, elapsed * (hat.spinSpeed or 6) * Settings.SpinSpeedMul, 0)
+    end
+    return nil
+end
+
+local function clampDistance(cf)
+    local rootPos = RootPart.Position
+    local delta = cf.p - rootPos
+    local m = delta.Magnitude
+    if m > Settings.MaxDistance then
+        return CFrame.new(rootPos + delta.Unit * Settings.MaxDistance) * (cf - cf.p)
+    end
+    return cf
+end
+
+local function Step()
+    if not Character or not Character.Parent or not Head or not Head.Parent
+       or not RootPart or not RootPart.Parent then return end
+
+    if Humanoid and Humanoid.Parent then
+        if Settings.WalkSpeed and Humanoid.WalkSpeed ~= Settings.WalkSpeed then
+            Humanoid.WalkSpeed = Settings.WalkSpeed
+        end
+        if Settings.JumpPower then
+            pcall(function() Humanoid.JumpPower = Settings.JumpPower end)
+        end
+    end
+
+    if Effects and Effects.Parent then
+        for _, a in ipairs(Effects:GetChildren()) do
+            if a.Name == "HatAnchor" then
+                local ref = a:FindFirstChild("HatAnchorParentRef")
+                if ref and ref.Value and ref.Value.Parent then a.CFrame = ref.Value.CFrame end
+            end
+        end
+    end
+
+    local headInv = Head.CFrame:inverse()
+    for i, hat in ipairs(HATS) do
+        if hat.handle and hat.handle.Parent then
+            if not hat.weld or not hat.weld.Parent then SetupHatWeld(hat) end
+            if hat.weld and hat.weld.Parent then
+                if hat.handle.CanCollide then hat.handle.CanCollide = false end
+                if Settings.ZeroVelocity then
+                    pcall(function() hat.handle.Velocity = VT(0, 0, 0) end)
+                end
+
+                local desired = desiredFor(hat, i)
+                if desired and validCF(desired) then
+                    desired = clampDistance(desired)
+                    local c0 = headInv * desired * (hat.weld.C1 or CF())
+                    if validCF(c0) then
+                        pcall(function() hat.weld.C0 = c0 end)
+                    end
+                end
+            end
+        end
+    end
+end
+
+RunService.Stepped:Connect(function() pcall(Step) end)
+RunService.Heartbeat:Connect(function() pcall(Step) end)
+
+spawn(function()
+    while true do
+        wait(Settings.RescanInterval)
+        pcall(Rescan)
+    end
+end)
+
+-- ============================================================
+-- KEYBINDS
+-- ============================================================
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe or not Settings.EnableKeys then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        SetAllHatsIdle()
+    elseif input.KeyCode == Enum.KeyCode.E then
+        AttachHatsOscillateToMouse()
+    elseif input.KeyCode == Enum.KeyCode.R then
+        AttachHatsPointingToMouse()
+    end
+end)
+
+-- ============================================================
+-- BOOT + RESPAWN
+-- ============================================================
+Player.CharacterAdded:Connect(function(char)
+    wait(0.5)
+    BindCharacter(char)
+end)
+
+BindCharacter(Player.Character or Player.CharacterAdded:Wait())
+print("[FE Hats] ready, hats: " .. #HATS)
+
+end -- Main
+
+local ok, err = xpcall(Main, function(e)
+    return tostring(e) .. "\n" .. (debug and debug.traceback and debug.traceback() or "")
+end)
+if not ok then
+    warn("[FE Hats] LOI: " .. tostring(err))
+end
