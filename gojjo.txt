@@ -1,5 +1,3 @@
-
-
 local env = (getgenv and getgenv()) or _G
 
 if env.FEHats and type(env.FEHats._Stop) == "function" then
@@ -30,6 +28,7 @@ local function Main()
         RingHeight       = -2,
         LoudnessDiv      = 300,
         EnableKeys       = true,
+        RemoveMusicOnRespawn = true,  -- xóa nhạc khi respawn (lần chạy đầu vẫn phát)
 
         -- [ANTI-FLING] cấu hình mới
         AntiFling         = true,  -- bật watchdog chống văng
@@ -88,6 +87,7 @@ local function Main()
     local FEHats = {}   -- bản cũ quên khai báo -> lần chạy đầu lỗi index nil
     local Conns  = {}   -- các connection để Stop() dọn sạch
     local Stopped = false
+    local booted  = false   -- false = lần bind nhân vật đầu tiên
     local lastRootPos = nil
     local teleportWhitelistUntil = 0
 
@@ -111,6 +111,17 @@ local function Main()
         Sound.Volume = 1
         Sound.Parent = workspace
         Sound:Play()
+    end
+
+    local function KillSound()
+        if Sound then
+            pcall(function() Sound:Stop() end)
+            pcall(function() Sound:Destroy() end)
+            Sound = nil
+        end
+        -- dọn cả Sound mồ côi nếu còn sót trong workspace
+        local old = workspace:FindFirstChild("FEHatsMusic")
+        if old then pcall(function() old:Destroy() end) end
     end
 
     local function SetupEffects()
@@ -244,7 +255,12 @@ local function Main()
         teleportWhitelistUntil = tick() + 1
 
         SetupEffects()
-        SetupSound()
+        if Settings.RemoveMusicOnRespawn and booted then
+            KillSound()          -- respawn: xóa nhạc, không phát lại
+        else
+            SetupSound()         -- lần đầu: phát nhạc bình thường
+        end
+        booted = true
 
         if Settings.SimRadius then
             pcall(function() sethiddenproperty(Player, "SimulationRadius", math.huge) end)
@@ -650,6 +666,7 @@ local function Main()
     -- BOOT + RESPAWN
     -- ============================================================
     table.insert(Conns, Player.CharacterAdded:Connect(function(char)
+        if Settings.RemoveMusicOnRespawn then KillSound() end  -- xóa nhạc ngay, không đợi
         wait(0.5)
         if Stopped then return end
         BindCharacter(char)
@@ -700,4 +717,3 @@ end)
 if not ok then
     warn("[FE Hats] LOI: " .. tostring(err))
 end
-
