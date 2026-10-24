@@ -2,7 +2,6 @@
 
 local env = (getgenv and getgenv()) or _G
 
--- [1] CHỐNG NẠP TRÙNG: nếu bản cũ vẫn đang chạy -> tắt nó trước
 if env.FEHats and type(env.FEHats._Stop) == "function" then
     pcall(env.FEHats._Stop)
     wait(0.2)
@@ -16,7 +15,7 @@ local function Main()
     local Settings = {
         HatNames         = { "RockAccessory" },
         IdleYOffset      = 80,
-        SoundId          = "rbxassetid://126311349373144",
+        SoundId          = "rbxassetid://121056079209675",
         ZeroVelocity     = false,
         Massless         = true,
         SimRadius        = true,
