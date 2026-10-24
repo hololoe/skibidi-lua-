@@ -1,3 +1,5 @@
+
+
 local env = (getgenv and getgenv()) or _G
 
 if env.FEHats and type(env.FEHats._Stop) == "function" then
@@ -28,7 +30,6 @@ local function Main()
         RingHeight       = -2,
         LoudnessDiv      = 300,
         EnableKeys       = true,
-        RemoveMusicOnRespawn = true,  -- chỉ xóa nhạc khi respawn do CHẾT (0 máu)
 
         -- [ANTI-FLING] cấu hình mới
         AntiFling         = true,  -- bật watchdog chống văng
@@ -87,9 +88,6 @@ local function Main()
     local FEHats = {}   -- bản cũ quên khai báo -> lần chạy đầu lỗi index nil
     local Conns  = {}   -- các connection để Stop() dọn sạch
     local Stopped = false
-    local diedFlag     = false  -- nhân vật vừa chết (0 máu)
-    local musicRemoved = false  -- nhạc đã bị xóa do chết -> không phát lại
-    local deathConn            -- connection Humanoid.Died của nhân vật hiện tại
     local lastRootPos = nil
     local teleportWhitelistUntil = 0
 
@@ -113,17 +111,6 @@ local function Main()
         Sound.Volume = 1
         Sound.Parent = workspace
         Sound:Play()
-    end
-
-    local function KillSound()
-        if Sound then
-            pcall(function() Sound:Stop() end)
-            pcall(function() Sound:Destroy() end)
-            Sound = nil
-        end
-        -- dọn cả Sound mồ côi nếu còn sót trong workspace
-        local old = workspace:FindFirstChild("FEHatsMusic")
-        if old then pcall(function() old:Destroy() end) end
     end
 
     local function SetupEffects()
@@ -249,14 +236,6 @@ local function Main()
         RootPart = char:WaitForChild("HumanoidRootPart", 10)
         Humanoid = char:WaitForChild("Humanoid", 10)
         LeftArm  = GetLeftArm(char)
-
-        -- theo dõi chết (0 máu) của nhân vật này
-        if deathConn then pcall(function() deathConn:Disconnect() end) deathConn = nil end
-        diedFlag = false
-        if Humanoid then
-            deathConn = Humanoid.Died:Connect(function() diedFlag = true end)
-        end
-
         for _, h in ipairs(HATS) do if h.conn then h.conn:Disconnect() end end
         HATS = {}
 
@@ -265,9 +244,7 @@ local function Main()
         teleportWhitelistUntil = tick() + 1
 
         SetupEffects()
-        if not musicRemoved then
-            SetupSound()         -- chưa chết lần nào: nhạc phát bình thường
-        end
+        SetupSound()
 
         if Settings.SimRadius then
             pcall(function() sethiddenproperty(Player, "SimulationRadius", math.huge) end)
@@ -673,12 +650,6 @@ local function Main()
     -- BOOT + RESPAWN
     -- ============================================================
     table.insert(Conns, Player.CharacterAdded:Connect(function(char)
-        -- chỉ xóa nhạc nếu nhân vật trước CHẾT (0 máu); respawn kiểu khác thì giữ nhạc
-        local died = diedFlag or (Humanoid ~= nil and Humanoid.Health <= 0)
-        if Settings.RemoveMusicOnRespawn and died then
-            musicRemoved = true
-            KillSound()
-        end
         wait(0.5)
         if Stopped then return end
         BindCharacter(char)
@@ -690,7 +661,6 @@ local function Main()
     local function Stop()
         if Stopped then return end
         Stopped = true
-        if deathConn then pcall(function() deathConn:Disconnect() end) deathConn = nil end
         for _, c in ipairs(Conns) do
             pcall(function() c:Disconnect() end)
         end
