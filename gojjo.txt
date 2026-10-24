@@ -15,7 +15,7 @@ local function Main()
     local Settings = {
         HatNames         = { "RockAccessory" },
         IdleYOffset      = 80,
-        SoundId          = "rbxassetid://122655297602541",
+        SoundId          = "rbxassetid://125357823403248",
         ZeroVelocity     = false,
         Massless         = true,
         SimRadius        = true,
