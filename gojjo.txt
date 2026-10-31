@@ -27,7 +27,7 @@ local function Main()
         SpinSpeedMul     = 1,
         RingRadiusMul    = 1,
         RingBaseRadius   = 1.5,
-        RingHeight       = -2,
+        RingHeight       = -3,
         LoudnessDiv      = 300,
         EnableKeys       = true,
 
